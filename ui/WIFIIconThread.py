@@ -1,4 +1,3 @@
-
 import time
 import os
 from PyQt5 import QtGui
@@ -14,7 +13,11 @@ class WIFIIconThread(QThread):
         self.WIFI_icons = []
 
         # 이미지 파일 로드
-        image_names = ["wifi_good.png", "wifi_fine.png", "wifi_bad.png"]
+        image_names = [
+            "./image/wifi_good.png",
+            "./image/wifi_fine.png",
+            "./image/wifi_bad.png",
+        ]
         for name in image_names:
             image_path = os.path.join(os.getcwd(), name)  # 현재 작업 디렉토리 기준 경로
             if os.path.exists(image_path):

@@ -1,11 +1,10 @@
-
-import os
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtCore import Qt
-from main_ui import Ui_MainWindow
+from .main_ui import Ui_MainWindow
 from WIFIIconThread import WIFIIconThread
-import translateWindow
+import translate_ui.translateWindow as translateWindow
+
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -51,7 +50,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         창이 닫힐 때 Wi-Fi 스레드를 종료.
         """
-        if hasattr(self, 'WIFIIconThread') and self.WIFIIconThread.isRunning():
+        if hasattr(self, "WIFIIconThread") and self.WIFIIconThread.isRunning():
             self.WIFIIconThread.stop()  # 스레드 종료 요청
             self.WIFIIconThread.wait()  # 스레드가 종료될 때까지 대기
         event.accept()  # 이벤트 처리 완료
