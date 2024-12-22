@@ -12,8 +12,8 @@ class CameraStreamThread(QThread):
 
     def run(self):
         cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)  # 가로 해상도 설정
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)  # 세로 해상도 설정
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # 가로 해상도 설정
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)  # 세로 해상도 설정
         while self.running:
             ret, img = cap.read()
             if ret:
