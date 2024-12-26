@@ -29,7 +29,7 @@ class Ui_MainWindow(object):
 
         # 환영 라벨 설정
         self.titleLabel = QtWidgets.QLabel(self.centralwidget)
-        self.titleLabel.setGeometry(QtCore.QRect(192, 180, 640, 70))  # 위치: 중앙 근처
+        self.titleLabel.setGeometry(QtCore.QRect(192, 180, 640, 75))  # 위치: 중앙 근처
         self.titleLabel.setAlignment(QtCore.Qt.AlignCenter)  # 텍스트 가운데 정렬
         self.titleLabel.setObjectName("titleLabel")
 

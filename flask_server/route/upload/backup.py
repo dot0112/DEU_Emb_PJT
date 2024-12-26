@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Pool
 from .controller.uploadController import worker_process
 import os
 
@@ -24,13 +24,21 @@ def predict_image():
         file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
         file.save(file_path)
 
-        pool = current_app.config["POOL"]
-        result = pool.apply_async(worker_process, args=(file_path,))
-        result_data = result.get()
+        result_queue = Queue()
+        worker = Process(target=worker_process, args=(file_path, result_queue))
+        worker.start()
+        worker.join(timeout=30)
+        if worker.is_alive():
+            worker.terminate()
+            return jsonify({"error": "작업 시간이 초과되었습니다."}), 500
 
-        if "error" in result_data:
-            return jsonify({"error": result_data["error"]}), 500
-        return jsonify(result_data), 200
+        if not result_queue.empty():
+            result = result_queue.get()
+            if "error" in result:
+                return jsonify({"error": result["error"]}), 500
+            return jsonify(result), 200
+        else:
+            return jsonify({"error": "작업 중 오류 발생"}), 500
 
     except Exception as e:
         print("Error: ", e)

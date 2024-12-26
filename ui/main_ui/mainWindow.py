@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtCore import Qt
 from .main_ui import Ui_MainWindow
 from WIFIIconThread import WIFIIconThread
+from PIRSensorThread import PIRSensorThread
 import translate_ui.translateWindow as translateWindow
 
 
@@ -22,6 +23,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 번역 창 초기화
         self.tWindow = None
 
+        # PIR 센서 스레드 초기화 및 시작
+        self.pir_thread = PIRSensorThread()
+        self.pir_thread.motion_detected.connect(self.showTranslateWindow)
+        self.pir_thread.start()
+
+        self.showFullScreen()
+
     def change_icon(self, pixmap: QPixmap):
         """
         Wi-Fi 상태 아이콘 업데이트.
@@ -40,12 +48,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.tWindow = translateWindow.TranslateWindow(self)
             self.tWindow.show()
 
-    def mousePressEvent(self, event):
-        """
-        마우스 클릭 이벤트로 번역 창 표시.
-        """
-        self.showTranslateWindow()
-
     def closeEvent(self, event):
         """
         창이 닫힐 때 Wi-Fi 스레드를 종료.
@@ -53,4 +55,5 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if hasattr(self, "WIFIIconThread") and self.WIFIIconThread.isRunning():
             self.WIFIIconThread.stop()  # 스레드 종료 요청
             self.WIFIIconThread.wait()  # 스레드가 종료될 때까지 대기
+
         event.accept()  # 이벤트 처리 완료

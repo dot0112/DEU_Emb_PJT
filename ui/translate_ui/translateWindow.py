@@ -1,18 +1,24 @@
-from . import cameraStreamThread
-import WIFIIconThread
-from . import AIResultThread
+from .CameraStreamThread import CameraStreamThread
+from WIFIIconThread import WIFIIconThread
+from .AIResultThread import AIResultThread
+from .TextResultThread import TextResultThread
 from .translate_ui import Ui_TranslateWindow
+from PIRSensorThread import PIRSensorThread
 from PyQt5 import QtGui
 from PyQt5.QtWidgets import QMainWindow
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt
 import threading
 import time
 import requests
 import atexit
 import traceback
+import os
+import pygame
 from collections import deque
+from gtts import gTTS
 
-atexit.register(AIResultThread.executor.shutdown)
+
+server_address = "113.198.233.233"
 
 
 class TranslateWindow(QMainWindow, Ui_TranslateWindow):
@@ -25,17 +31,18 @@ class TranslateWindow(QMainWindow, Ui_TranslateWindow):
 
         # 프레임 저장 간격 제어 변수 추가
         self.last_frame_time = 0
-        self.upload_time = 1000
+        self.upload_time = 2000
         self.char_queue = deque()
-        self.translated_string = ""
+        self.translated_string = ["", ""]
+        self.ai_thread = None
 
         # 카메라 스트림 스레드 설정
-        self.cameraStreamThread = cameraStreamThread.CameraStreamThread()
+        self.cameraStreamThread = CameraStreamThread()
         self.cameraStreamThread.update_frame.connect(self.update_video_frame)
         self.cameraStreamThread.start()
 
         # Wi-Fi 상태 아이콘 스레드 설정
-        self.WIFIIconThread = WIFIIconThread.WIFIIconThread()
+        self.WIFIIconThread = WIFIIconThread()
         self.WIFIIconThread.change_icon.connect(self.change_icon)
         self.WIFIIconThread.start()
 
@@ -43,6 +50,12 @@ class TranslateWindow(QMainWindow, Ui_TranslateWindow):
         self.queue_thread = threading.Thread(target=self.monitor_char_queue)
         self.queue_thread.daemon = True
         self.queue_thread.start()
+
+        self.pir_thread = PIRSensorThread()
+        self.pir_thread.motion_undetected.connect(self.close)
+        self.pir_thread.start()
+
+        self.showFullScreen()
 
         # 주기적 작업 타이머 설정
         self.setup_timer()
@@ -73,10 +86,18 @@ class TranslateWindow(QMainWindow, Ui_TranslateWindow):
         if not self.timer.isActive():
             return
 
-        thread = threading.Thread(
-            target=AIResultThread.capture_and_upload, args=(self.char_queue,)
-        )
-        thread.start()
+        self.ai_thread = AIResultThread(self.char_queue)
+        self.ai_thread.result_ready.connect(self.handle_result)
+        self.ai_thread.error_occurred.connect(self.handle_error)
+        self.ai_thread.start()
+
+    def handle_result(self, result):
+        print("결과:", result)
+        # 여기에서 결과를 처리합니다.
+
+    def handle_error(self, error_message):
+        print("에러:", error_message)
+        # 여기에서 에러를 처리합니다.
 
     def setup_timer(self):
         """
@@ -97,44 +118,76 @@ class TranslateWindow(QMainWindow, Ui_TranslateWindow):
     def monitor_char_queue(self):
         while not self.stop_event.is_set():
             if len(self.char_queue) != 0:
-                # 창이 닫혔으면 업데이트 중단
                 if not self.isVisible():
                     return
                 self.process_char_data()
 
         time.sleep(1.0)
 
+    def set_result_label(self):
+        result_string = ""
+        result_string += (
+            self.translated_string[0] + " " + self.translated_string[1] + " "
+        )
+        char_queue_copy = list(self.char_queue)
+        for c in char_queue_copy:
+            result_string += c
+        self.resultLabel.setText(result_string)
+
+    def start_text_result_thread(self, textList):
+        """
+        TextResultThread를 실행하여 음성 출력을 처리합니다.
+        """
+        self.text_thread = TextResultThread(textList)
+        self.text_thread.finished.connect(self.on_text_thread_finished)
+        self.text_thread.start()
+
+    def on_text_thread_finished(self):
+        """
+        TextResultThread 작업 완료 후 호출됩니다.
+        """
+        # 스레드 메모리 해제
+        if self.text_thread is not None:
+            self.text_thread.deleteLater()
+            self.text_thread = None
+
     def process_char_data(self):
-        if len(self.char_queue) >= 6:
-            sending_string = self.translated_string
+        if len(self.char_queue) >= 10:
+            sending_string = self.translated_string[0] + self.translated_string[1]
             for c in self.char_queue:
                 sending_string += c
             self.char_queue.clear()
-            url = "http://localhost:3000/translated/text"
+            url = f"http://{server_address}:3000/translate/text"
+
             try:
                 data = {"korean_text": sending_string}
-                response = requests.post(url, data, timeout=10)
+                headers = {"Content-Type": "application/json"}
+                response = requests.post(url, json=data, headers=headers, timeout=10)
                 response.raise_for_status()
                 if response.status_code == 200:
-                    translated_text = response.json().translated_text
+                    print(response.json())
+                    translated_text = response.json()["translated_text"]
                     split_text = translated_text.split("/")
-                    self.translated_string = split_text[0]
-                    self.resultLabel.text = split_text[0]
-                    if len(split_text) > 1:
-                        self.resultLabel.text += split_text[1]
-                        for c in split_text[1]:
-                            self.char_queue.append(c)
+                    for i, text in enumerate(reversed(split_text[:-1])):
+                        if i >= 2:
+                            break
+                        self.translated_string[1 - i] = text
+                    self.start_text_result_thread(self.translated_string)
             except requests.exceptions.RequestException as e:
                 print(f"오류 발생: {str(e)}")
-        else:
-            self.resultLabel.text += self.char_queue[-1]
-        # 예: UI 업데이트, 번역 수행, 다른 작업 등
+
+        self.set_result_label()
 
     def closeEvent(self, event):
         # 타이머 중지
-        if hasattr(self, "timer") and self.timer.isActive():
-            self.timer.stop()
-            self.timer.deleteLater()
+        if hasattr(self, "timer"):
+            try:
+                if self.timer.isActive():
+                    self.timer.stop()
+                self.timer.deleteLater()
+            except RuntimeError:
+                # 타이머가 이미 삭제된 경우 처리
+                pass
 
         # 백그라운드 스레드 종료 비동기 처리
         threading.Thread(target=self.shutdown_threads).start()
@@ -183,3 +236,45 @@ class TranslateWindow(QMainWindow, Ui_TranslateWindow):
             # 전체 종료 프로세스에서 발생한 예기치 않은 오류
             print(f"스레드 종료 처리 중 알 수 없는 오류 발생: {e}")
             traceback.print_exc()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        korean_key = self.map_to_korean(key)
+        if korean_key is not None:
+            if korean_key == "b":
+                if len(self.char_queue) > 0:
+                    self.char_queue.pop()
+            else:
+                self.char_queue.append(korean_key)
+
+    def map_to_korean(self, key):
+        korean_mapping = {
+            Qt.Key_A: "ㅁ",
+            Qt.Key_B: "ㅠ",
+            Qt.Key_C: "ㅊ",
+            Qt.Key_D: "ㅇ",
+            Qt.Key_E: "ㄷ",
+            Qt.Key_F: "ㄹ",
+            Qt.Key_G: "ㅎ",
+            Qt.Key_H: "ㅗ",
+            Qt.Key_I: "ㅑ",
+            Qt.Key_J: "ㅓ",
+            Qt.Key_K: "ㅏ",
+            Qt.Key_L: "ㅣ",
+            Qt.Key_M: "ㅡ",
+            Qt.Key_N: "ㅜ",
+            Qt.Key_O: "ㅐ",
+            Qt.Key_P: "ㅔ",
+            Qt.Key_Q: "ㅂ",
+            Qt.Key_R: "ㄱ",
+            Qt.Key_S: "ㄴ",
+            Qt.Key_T: "ㅅ",
+            Qt.Key_U: "ㅕ",
+            Qt.Key_V: "ㅍ",
+            Qt.Key_W: "ㅈ",
+            Qt.Key_X: "ㅌ",
+            Qt.Key_Y: "ㅛ",
+            Qt.Key_Z: "ㅋ",
+            Qt.Key_Backspace: "b",
+        }
+        return korean_mapping.get(key, None)

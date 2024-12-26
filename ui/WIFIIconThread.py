@@ -1,5 +1,7 @@
 import time
 import os
+import subprocess
+import re
 from PyQt5 import QtGui
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -28,12 +30,31 @@ class WIFIIconThread(QThread):
 
     def run(self):
         while self._is_running:
-            for icon in self.WIFI_icons:
-                if not self._is_running:
-                    break
-                self.change_icon.emit(icon)
-                time.sleep(1)  # 1초 대기
+            signal_strength = self.get_wifi_signal_strength()
+            if not self._is_running:
+                break
+            if signal_strength is not None:
+                if signal_strength >= -50:
+                    self.change_icon.emit(self.WIFI_icons[0])
+                elif signal_strength >= -70:
+                    self.change_icon.emit(self.WIFI_icons[1])
+                else: 
+                    self.change_icon.emit(self.WIFI_icons[2])
+            else:
+                self.change_icon.emit(None)
+            time.sleep(1)
 
     def stop(self):
         """스레드 종료 요청"""
         self._is_running = False
+
+    def get_wifi_signal_strength(self):
+        try:
+            output = subprocess.check_output(['iwconfig', 'wlan0']).decode('utf-8')
+            match = re.search(r'Signal level=(-\d+) dBm', output)
+            if match:
+                return int(match.group(1))
+            else:
+                return None
+        except subprocess.CalledProcessError:
+            return None
